@@ -1,0 +1,138 @@
+---
+title: "Practical Machine Learning Project"
+author: "Ran Tang"
+date: "4/14/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect
+a large amount of data about personal activity relatively inexpensively. These type of devices 
+are part of the quantified self movement - a group of enthusiasts who take measurements about 
+themselves regularly to improve their health, to find patterns in their behavior, or because 
+they are tech geeks. One thing that people regularly do is quantify how much of a particular 
+activity they do, but they rarely quantify how well they do it. The goal of this project is to 
+use data from accelerometers on the belt, forearm, arm, and dumbbell of 6 participants as they 
+perform barbell lifts correctly and incorrectly 5 different ways.
+
+## Executive Summary
+We first processed the data by removing near zero variance variables, excluding variables with
+over 50% NA terms, and then proceeded to split the training set into a training subset and a
+cross validation set. We then applied 3 different fit algorithms to the data (namely random forest,
+gradient boosting machines, and linear discriminant analysis), to see which method performed the
+best on the cross validation set. We found the random forest to be the best performer with 99.8%
+accuracy so we used that to predict the test set.
+```{r}
+library(dplyr)
+library(ggplot2)
+library(caret)
+library(randomForest)
+library(e1071)
+library(gbm)
+```
+
+# Loading and preprocessing the data
+```{r}
+fname1 <- "pml-training"
+fname2 <- "pml-test"
+furl1 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+furl2 <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+
+if (!file.exists(fname1)){
+  download.file(furl1, fname1, method="curl")
+}
+
+if (!file.exists(fname1)) { 
+  unzip(fname1) 
+}
+if (!file.exists(fname2)){
+  download.file(furl2, fname2, method="curl")
+}
+
+if (!file.exists(fname2)) { 
+  unzip(fname2) 
+}
+
+#read data into R
+train <- read.csv(fname1,na.strings=c("#DIV/0!"), row.names = 1)
+testing <- read.csv(fname2,na.strings=c("#DIV/0!"), row.names = 1)
+```
+
+## Data Processing
+We need to split the training data into the training set and the cross validation set,
+then we need to remove near zero variance variables and variables where there are too
+many NA terms.
+```{r}
+#Set Seed for reproducibility
+set.seed(100)
+
+#Split the Training Set further into a training set and Cross-Validation Set
+set <- createDataPartition(train$classe, p = 0.7, list = FALSE)
+training <- train[set, ]
+crossVal <- train[-set, ]
+
+#Remove near zero variance variables
+nearZero <- nearZeroVar(training)
+training <- training[, -nearZero]
+crossVal <- crossVal[, -nearZero]
+testing <- testing[, -nearZero]
+
+#Remove variables where there are too many NA terms
+cleanCol <- !apply(training, 2, function(x) sum(is.na(x)) > .5  || sum(x=="") > .5)
+training <- training[, cleanCol]
+crossVal <- crossVal[, cleanCol]
+testing <- testing[, cleanCol]
+
+#set as factor
+training$classe <- as.factor(training$classe)
+crossVal$classe <- as.factor(crossVal$classe)
+```
+
+
+## Model Development and Selection
+We can train 3 separate models, random forest, gradient boosting machines, and linear
+discriminant analysis to see which has the best performance on the cross validation set.
+```{r}
+#we limit the number of trees in the random forest to save processing time
+rfFit <- train(classe ~ ., data = training, method = "rf", ntree = 20)
+gbmFit <- train(classe ~ ., data = training, method = "gbm", verbose = FALSE)
+suppressWarnings(ldaFit <- train(classe ~ ., data = training, method = "lda"))
+```
+
+## Cross Validation Set Accuracy
+We want to see how our 3 models do against the cross validation set so we can pick which
+is best suited.
+```{r}
+pred_rf <- predict(rfFit, crossVal)
+pred_gbm <- predict(gbmFit, crossVal)
+pred_lda <- predict(ldaFit, crossVal)
+
+#see appendix for the full confusion matrix on gbm and lda
+confusionMatrix(pred_rf, crossVal$classe)
+confusionMatrix(pred_rf, crossVal$classe)$overall[1]
+confusionMatrix(pred_gbm, crossVal$classe)$overall[1]
+confusionMatrix(pred_lda, crossVal$classe)$overall[1]
+```
+We see from the accuracy that using random forest gives us the highest accuracy out of the 3
+methods with 99.9% accuracy. We can then proceed to use that as our model for the predicting
+the test set.
+
+
+## Results on the Test Set
+Since we chose the random forest as our model with the highest accuracy in the cross validation
+set, we can then apply it to the test set.
+```{r}
+results <- predict(rfFit, testing)
+results
+```
+
+## Appendix
+Full Confusion Matrix Statistics for the gbm and lda models
+```{r}
+confusionMatrix(pred_gbm, crossVal$classe)
+confusionMatrix(pred_lda, crossVal$classe)
+```
